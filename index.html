@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音声録音とダウンロード</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #controls {
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        #status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #333;
+        }
+        #audioPlayback {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>音声録音とダウンロード</h1>
+    <div id="controls">
+        <button id="startRecording" onclick="startRecording()">録音開始</button>
+        <button id="stopRecording" onclick="stopRecording()" disabled>録音停止</button>
+        <button id="downloadRecording" onclick="downloadRecording()" disabled>ダウンロード</button>
+    </div>
+    <p id="status">準備中...</p>
+    <audio id="audioPlayback" controls style="display: none;"></audio>
+
+    <script>
+        let mediaRecorder;
+        let recordedChunks = [];
+        let audioBlob;
+        let stream;
+
+        const startButton = document.getElementById('startRecording');
+        const stopButton = document.getElementById('stopRecording');
+        const downloadButton = document.getElementById('downloadRecording');
+        const status = document.getElementById('status');
+        const audioPlayback = document.getElementById('audioPlayback');
+
+        // ブラウザの互換性チェック
+        if (!navigator.mediaDevices || !window.MediaRecorder) {
+            status.textContent = 'エラー: このブラウザは録音機能をサポートしていません。Chrome、Firefox、Edgeを使用してください。';
+            startButton.disabled = true;
+            return;
+        }
+
+        async function startRecording() {
+            try {
+                // 既存のストリームをクリーンアップ
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    audioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audioPlayback.src = audioUrl;
+                    audioPlayback.style.display = 'block';
+                    downloadButton.disabled = false;
+                    status.textContent = '録音が完了しました。再生またはダウンロードしてください。';
+                    // ストリームをクリーンアップ
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                };
+
+                mediaRecorder.onerror = (event) => {
+                    status.textContent = `録音エラー: ${event.error.message || '不明なエラーが発生しました。'}`;
+                    console.error('MediaRecorderエラー:', event.error);
+                };
+
+                mediaRecorder.start();
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                downloadButton.disabled = true;
+                status.textContent = '録音中...';
+                recordedChunks = [];
+            } catch (err) {
+                let errorMessage = '録音開始エラー: ';
+                if (err.name === 'NotAllowedError') {
+                    errorMessage += 'マイクのアクセスが許可されていません。ブラウザの設定を確認してください。';
+                } else if (err.name === 'NotFoundError') {
+                    errorMessage += 'マイクが見つかりません。デバイスを確認してください。';
+                } else {
+                    errorMessage += err.message || '不明なエラーが発生しました。';
+                }
+                status.textContent = errorMessage;
+                console.error('録音開始エラー:', err);
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                startButton.disabled = false;
+                stopButton.disabled = true;
+            }
+        }
+
+        function downloadRecording() {
+            if (audioBlob) {
+                const url = URL.createObjectURL(audioBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'recording.webm';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                status.textContent = '録音をダウンロードしました。';
+            }
+        }
+
+        // ページ離脱時にストリームをクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>
